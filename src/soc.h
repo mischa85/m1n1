@@ -28,6 +28,8 @@
 #define T6031 0x6031
 #define T6034 0x6034
 
+#define T6041 0x6041
+
 #ifdef TARGET
 
 #if TARGET == T8103
@@ -39,6 +41,8 @@
 #define EARLY_UART_BASE 0x235200000
 #elif TARGET == T6034 || TARGET == T6031
 #define EARLY_UART_BASE 0x391200000
+#elif TARGET == T6041
+#define EARLY_UART_BASE 0x429200000
 #elif TARGET == T8015
 #define EARLY_UART_BASE 0x22e600000
 #elif TARGET == T7000 || TARGET == T7001 || TARGET == S8000 || TARGET == S8001 ||                  \

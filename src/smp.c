@@ -79,7 +79,7 @@ void smp_secondary_entry(void)
             if (wfe_mode) {
                 sysop("wfe");
             } else {
-                if (!supports_arch_retention()) {
+                if (!supports_arch_retention() || !cpufeat_ovrd_accessible) {
                     // A7 - A11 does not support state retention across deep WFI
                     // i.e. CPU always ends up at rvbar after deep WFI
                     sysop("wfi");

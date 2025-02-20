@@ -151,8 +151,8 @@ void m1n1_main(void)
     heapblock_init();
 
 #ifndef BRINGUP
-    if (supports_gxf())
-        gxf_init();
+    //if (supports_gxf())
+    //    gxf_init();
     mcc_init();
     mmu_init();
     aic_init();

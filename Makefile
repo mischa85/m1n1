@@ -111,6 +111,7 @@ OBJECTS := \
 	chickens_everest.o \
 	chickens_firestorm.o \
 	chickens_hurricane_zephyr.o \
+	chickens_m4.o \
 	chickens_monsoon_mistral.o \
 	chickens_icestorm.o \
 	chickens_sawtooth.o \

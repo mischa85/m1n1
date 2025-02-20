@@ -384,6 +384,43 @@ int mcc_init_t6031(int node, int *path)
     return 0;
 }
 
+int mcc_init_t6041(int node, int *path)
+{
+    printf("MCC: Initializing T6041 MCC...\n");
+    mcc_count = 1;
+    mcc_regs[0].plane_stride = T8103_PLANE_STRIDE;
+    mcc_regs[0].dcs_stride = T8103_DCS_STRIDE;
+    if (adt_get_reg(adt, path, "reg", 0, &mcc_regs[0].global_base, NULL)) {
+        printf("MCC: Failed to get reg property 0!\n");
+        return -1;
+    }
+    if (adt_get_reg(adt, path, "reg", 1, &mcc_regs[0].plane_base, NULL)) {
+        printf("MCC: Failed to get reg property 1!\n");
+        return -1;
+    }
+    if (adt_get_reg(adt, path, "reg", 2, &mcc_regs[0].dcs_base, NULL)) {
+        printf("MCC: Failed to get reg property 2!\n");
+        return -1;
+    }
+    if (!ADT_GETPROP(adt, node, "dcs-count-per-amcc", &mcc_regs[0].dcs_count)) {
+        printf("MCC: Failed to get dcs count!\n");
+        return -1;
+    }
+    if (!ADT_GETPROP(adt, node, "plane-count-per-amcc", &mcc_regs[0].plane_count)) {
+        printf("MCC: Failed to get plane count!\n");
+        return -1;
+    }
+    mcc_regs[0].cache_enable_val = T8103_CACHE_WAYS;
+    mcc_regs[0].cache_ways = T8103_CACHE_WAYS;
+    mcc_regs[0].cache_status_mask = T8103_CACHE_STATUS_MASK;
+    mcc_regs[0].cache_status_val = T8103_CACHE_STATUS_VAL;
+    mcc_regs[0].cache_disable = T8112_CACHE_DISABLE;
+    mcc_regs[0].tz = &t8103_tz_regs;
+    printf("MCC: Initialized T6041 MCC (%d channels)\n", mcc_regs[0].dcs_count);
+    mcc_initialized = true;
+    return 0;
+}
+
 int mcc_init(void)
 {
     int path[8];
@@ -404,6 +441,8 @@ int mcc_init(void)
         return mcc_init_t6000(node, path, true);
     } else if (adt_is_compatible(adt, node, "mcc,t6031")) {
         return mcc_init_t6031(node, path);
+    } else if (adt_is_compatible(adt, node, "mcc,t6041")) {
+        return mcc_init_t6041(node, path);
     } else {
         printf("MCC: Unsupported version:%s\n", adt_get_property(adt, node, "compatible")->value);
         return -1;
