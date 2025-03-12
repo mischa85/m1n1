@@ -256,6 +256,8 @@ void usb_spmi_init(void)
 
 void usb_init(void)
 {
+    printf("usb_init()\n");
+
     char hpm_path[sizeof(FMT_HPM_PATH)];
 
     if (usb_is_initialized)

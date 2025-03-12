@@ -83,22 +83,21 @@ PMGRDeviceFlags = BitStruct(
 
 PMGRDevices = SafeGreedyRange(Struct(
     "flags" / PMGRDeviceFlags,
-    "unk1_0" / Int8ul,
-    "unk1_1" / Int8ul,
-    "unk1_2" / Int8ul,
+    "unk3_1" / Int8ul,
+    "unk3_2" / Int8ul,
+    "id1" / Int8ul,
     "parents" / Array(2, Int16ul),
     "perf_idx" / Int8ul,
     "perf_block" / Int8ul,
-    "psidx" / Int8ul,
-    "psreg" / Int8ul,
-    "unk2_0" / Int16ul,
-    "pd" / Int8ul,
-    "ps_cfg16" / Int8ul,
+    Const(0, Int8ul), # no psidx on t6041
+    Const(0, Int8ul), # no psreg on t6041
+    "unk1" / Int32ul,
+    "unk2" / Int32ul,
     Const(0, Int32ul),
+    Const(0, Int8ul),
+    "unk3_3" / Int8ul,
+    "id2" / Int16ul,
     Const(0, Int32ul),
-    "unk2_3" / Int16ul,
-    "id" / Int16ul,
-    "unk3" / Int32ul,
     "name" / PaddedString(16, "ascii")
 ))
 

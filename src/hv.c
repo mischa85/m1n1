@@ -188,7 +188,7 @@ void hv_start(void *entry, u64 regs[4])
 
 static void hv_init_secondary(struct hv_secondary_info_t *info)
 {
-    gxf_init();
+    //gxf_init();
 
     msr(VBAR_EL1, _hv_vectors_start);
 

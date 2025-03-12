@@ -86,6 +86,7 @@ void run_actions(void)
         printf("Bringing up USB for early debug...\n");
 
         usb_init();
+
         usb_iodev_init();
 
         usb_up = true;
@@ -128,8 +129,8 @@ void run_actions(void)
 
 #ifndef BRINGUP
     if (!usb_up) {
-        usb_init();
-        usb_iodev_init();
+        //usb_init();
+        //usb_iodev_init();
     }
 #endif
 
@@ -152,14 +153,12 @@ void m1n1_main(void)
 
 #ifndef BRINGUP
     //if (supports_gxf())
-    //    gxf_init();
+        //gxf_init();
     mcc_init();
     mmu_init();
     aic_init();
 #endif
     wdt_disable();
-#ifndef BRINGUP
-    pmgr_init();
 #ifdef USE_FB
     display_init();
     // Kick DCP to sleep, so dodgy monitors which cause reconnect cycles don't cause us to lose the
@@ -172,14 +171,25 @@ void m1n1_main(void)
     fb_set_active(!cur_boot_args.video.display);
 #else
     fb_set_active(true);
+#ifndef BRINGUP
+    //pmgr_init();
 #endif
 #endif
-
     cpufreq_fixup();
     sep_init();
 #endif
 
     printf("Initialization complete.\n");
+
+    printf("AIDR_EL1: 0x%02X %02X %02X %02X %02X %02X %02X %02X\n", 
+        (uint8_t)(mrs(AIDR_EL1)>>56 & 0xFF),
+        (uint8_t)(mrs(AIDR_EL1)>>48 & 0xFF),
+        (uint8_t)(mrs(AIDR_EL1)>>40 & 0xFF),
+        (uint8_t)(mrs(AIDR_EL1)>>32 & 0xFF),
+        (uint8_t)(mrs(AIDR_EL1)>>24 & 0xFF),
+        (uint8_t)(mrs(AIDR_EL1)>>16 & 0xFF),
+        (uint8_t)(mrs(AIDR_EL1)>>8 & 0xFF),
+        (uint8_t)(mrs(AIDR_EL1)>>0 & 0xFF));
 
     run_actions();
 

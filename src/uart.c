@@ -16,6 +16,8 @@ static u64 uart_base = 0;
 
 int uart_init(void)
 {
+    printf("uart_init()\n");
+
     int path[8];
     const char *uart_path;
 

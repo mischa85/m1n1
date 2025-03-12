@@ -22,7 +22,8 @@
 
 struct pmgr_device {
     u8 flags;
-    u16 unk1;
+    u8 unk3_1;
+    u8 unk3_2;
     u8 id1;
     union {
         struct {
@@ -36,10 +37,19 @@ struct pmgr_device {
     u8 unk3[2];
     u8 addr_offset;
     u8 psreg_idx;
-    u8 unk4[14];
+    u32 unk1;
+    u32 unk2;
+    u8 unk4[5];
+    u8 unk3_3;
     u16 id2;
     u8 unk5[4];
     const char name[0x10];
+} PACKED;
+
+struct ps_regs {
+    u32 reg;
+    u32 offset;
+    u32 mask;
 } PACKED;
 
 static int pmgr_initialized = 0;
@@ -77,6 +87,9 @@ static uintptr_t pmgr_get_psreg(u8 idx)
 
 int pmgr_set_mode(uintptr_t addr, u8 target_mode)
 {
+    printf("pmgr: setting mode %x for device at 0x%lx: %x\n", target_mode,
+        addr, read32(addr));
+    mdelay(100);
     mask32(addr, PMGR_PS_TARGET, FIELD_PREP(PMGR_PS_TARGET, target_mode));
     if (poll32(addr, PMGR_PS_ACTUAL, FIELD_PREP(PMGR_PS_ACTUAL, target_mode), PMGR_POLL_TIMEOUT) <
         0) {
@@ -112,13 +125,75 @@ static int pmgr_find_device(u16 id, const struct pmgr_device **device)
 
 static uintptr_t pmgr_device_get_addr(u8 die, const struct pmgr_device *device)
 {
+#if TARGET == T6041
+    u8 addr_offset;
+    uintptr_t addr;
+    if (strcmp(device->name, "ATC0_USB_AON") == 0) {
+        printf("pmgr: ATC0_USB_AON\n");
+        addr = pmgr_get_psreg(6);
+        addr_offset = 0;
+    } else if (strcmp(device->name, "ATC1_USB_AON") == 0) {
+        printf("pmgr: ATC1_USB_AON\n");
+        addr = pmgr_get_psreg(7);
+        addr_offset = 0;
+    } else if (strcmp(device->name, "ATC2_USB_AON") == 0) {
+        printf("pmgr: ATC2_USB_AON\n");
+        addr = pmgr_get_psreg(7);
+        addr_offset = 0;
+    } else if (strcmp(device->name, "ATC3_USB_AON") == 0) {
+        printf("pmgr: ATC3_USB_AON\n");
+        addr = pmgr_get_psreg(7);
+        addr_offset = 0;
+    } else if (strcmp(device->name, "ATC0_COMMON") == 0) {
+        printf("pmgr: ATC0_COMMON\n");
+        addr = pmgr_get_psreg(11);
+        addr_offset = 9;
+    } else if (strcmp(device->name, "ATC0_COMMON_DP") == 0) {
+        printf("pmgr: ATC0_COMMON_DP\n");
+        addr = pmgr_get_psreg(7);
+        addr_offset = 0;
+    } else if (strcmp(device->name, "ATC1_COMMON") == 0) {
+        printf("pmgr: ATC1_COMMON\n");
+        addr = pmgr_get_psreg(16);
+        addr_offset = 9;
+    } else if (strcmp(device->name, "ATC1_COMMON_DP") == 0) {
+        printf("pmgr: ATC1_COMMON_DP\n");
+        addr = pmgr_get_psreg(0);
+        addr_offset = 0;
+    } else if (strcmp(device->name, "ATC2_COMMON_DP") == 0) {
+        printf("pmgr: ATC2_COMMON_DP\n");
+        addr = pmgr_get_psreg(0);
+        addr_offset = 0;
+    } else if (strcmp(device->name, "ATC3_COMMON_DP") == 0) {
+        printf("pmgr: ATC3_COMMON_DP\n");
+        addr = pmgr_get_psreg(0);
+        addr_offset = 0;
+    } else if (strcmp(device->name, "FAB2_SOC") == 0) {
+        printf("pmgr: FAB2_SOC\n");
+        addr = pmgr_get_psreg(1);
+        addr_offset = 0;
+    } else if (strcmp(device->name, "AFI") == 0) {
+        printf("pmgr: AFI\n");
+        addr = pmgr_get_psreg(2);
+        addr_offset = 0;
+    } else {
+        printf("pmgr: else...\n");
+        addr = pmgr_get_psreg(0);
+        addr_offset = 0;
+    }
+#else
     uintptr_t addr = pmgr_get_psreg(device->psreg_idx);
+#endif
     if (addr == 0)
         return 0;
 
     addr += PMGR_DIE_OFFSET * die;
 
+#if TARGET == T6041
+    addr += (addr_offset << 3);
+#else
     addr += (device->addr_offset << 3);
+#endif
     return addr;
 }
 
@@ -252,6 +327,8 @@ static int pmgr_adt_device_set_mode(const char *path, u32 index, u8 target_mode,
 
 int pmgr_adt_power_enable(const char *path)
 {
+    printf("POWER ENABLE!!!!");
+    mdelay(10000);
     int ret = pmgr_adt_devices_set_mode(path, PMGR_PS_ACTIVE, true);
     return ret;
 }
@@ -343,6 +420,8 @@ int pmgr_reset(int die, const char *name)
 
 int pmgr_init(void)
 {
+    printf("pmgr: pmgr_init()\n");
+
     int node = adt_path_offset(adt, "/arm-io");
     if (node < 0) {
         printf("pmgr: Error getting /arm-io node\n");
@@ -357,11 +436,106 @@ int pmgr_init(void)
         return -1;
     }
 
+    printf("pmgr: node: %d, pmgr_dies: %d, pmgr_offset: %d\n.", node, pmgr_dies, pmgr_offset);
+
+#if TARGET == T6041
+    struct ps_regs ps_regs_array[22];
+    pmgr_ps_regs = ps_regs_array;
+    pmgr_ps_regs_len = sizeof(ps_regs_array);
+    ps_regs_array[0].reg        = 0x00000000;
+    ps_regs_array[0].offset     = 0x00000000;
+    ps_regs_array[0].mask       = 0x001FFFCF;
+
+    ps_regs_array[1].reg        = 0x00000000;
+    ps_regs_array[1].offset     = 0x00000100;
+    ps_regs_array[1].mask       = 0x55557FFF;
+
+    ps_regs_array[2].reg        = 0x00000000;
+    ps_regs_array[2].offset     = 0x00000200;
+    ps_regs_array[2].mask       = 0x55555555;
+
+    ps_regs_array[3].reg        = 0x00000000;
+    ps_regs_array[3].offset     = 0x00000300;
+    ps_regs_array[3].mask       = 0x55555555;
+
+    ps_regs_array[4].reg        = 0x00000000;
+    ps_regs_array[4].offset     = 0x00000400;
+    ps_regs_array[4].mask       = 0xFFFFFFFD;
+
+    ps_regs_array[5].reg        = 0x00000000;
+    ps_regs_array[5].offset     = 0x00000500;
+    ps_regs_array[5].mask       = 0x07F81783;
+
+    ps_regs_array[6].reg        = 0x00000000;
+    ps_regs_array[6].offset     = 0x00000600;
+    ps_regs_array[6].mask       = 0x00004080;
+
+    ps_regs_array[7].reg        = 0x00000001;
+    ps_regs_array[7].offset     = 0x00000200;
+    ps_regs_array[7].mask       = 0xFFFDF800;
+
+    ps_regs_array[8].reg        = 0x00000001;
+    ps_regs_array[8].offset     = 0x00000100;
+    ps_regs_array[8].mask       = 0x00000F57;
+
+    ps_regs_array[9].reg        = 0x00000001;
+    ps_regs_array[9].offset     = 0x00002000;
+    ps_regs_array[9].mask       = 0x00000000;
+
+    ps_regs_array[10].reg       = 0x00000001;
+    ps_regs_array[10].offset    = 0x00004000;
+    ps_regs_array[10].mask      = 0x00000000;
+
+    ps_regs_array[11].reg       = 0x00000001;
+    ps_regs_array[11].offset    = 0x00008000;
+    ps_regs_array[11].mask      = 0x00000000;
+
+    ps_regs_array[12].reg       = 0x00000002;
+    ps_regs_array[12].offset    = 0x00000100;
+    ps_regs_array[12].mask      = 0xAAAAAABF;
+
+    ps_regs_array[13].reg       = 0x00000002;
+    ps_regs_array[13].offset    = 0x00000200;
+    ps_regs_array[13].mask      = 0xFFFFFFFF;
+
+    ps_regs_array[14].reg       = 0x00000002;
+    ps_regs_array[14].offset    = 0x00000300;
+    ps_regs_array[14].mask      = 0x555557FF;
+
+    ps_regs_array[15].reg       = 0x00000002;
+    ps_regs_array[15].offset    = 0x00000400;
+    ps_regs_array[15].mask      = 0xE0015555;
+
+    ps_regs_array[16].reg       = 0x00000002;
+    ps_regs_array[16].offset    = 0x00000500;
+    ps_regs_array[16].mask      = 0x01B5559F;
+
+    ps_regs_array[17].reg       = 0x00000002;
+    ps_regs_array[17].offset    = 0x00000C00;
+    ps_regs_array[17].mask      = 0x00000001;
+
+    ps_regs_array[18].reg       = 0x00000002;
+    ps_regs_array[18].offset    = 0x00004000;
+    ps_regs_array[18].mask      = 0x000007C2;
+
+    ps_regs_array[19].reg       = 0x00000002;
+    ps_regs_array[19].offset    = 0x00008000;
+    ps_regs_array[19].mask      = 0x0000001F;
+
+    ps_regs_array[20].reg       = 0x00000036;
+    ps_regs_array[20].offset    = 0x00000000;
+    ps_regs_array[20].mask      = 0x00000001;
+
+    ps_regs_array[21].reg       = 0x00000036;
+    ps_regs_array[21].offset    = 0x00000100;
+    ps_regs_array[21].mask      = 0x00000005;
+#else
     pmgr_ps_regs = adt_getprop(adt, pmgr_offset, "ps-regs", &pmgr_ps_regs_len);
     if (pmgr_ps_regs == NULL || pmgr_ps_regs_len == 0) {
         printf("pmgr: Error getting /arm-io/pmgr ps-regs\n.");
         return -1;
     }
+#endif
 
     pmgr_devices = adt_getprop(adt, pmgr_offset, "devices", &pmgr_devices_len);
     if (pmgr_devices == NULL || pmgr_devices_len == 0) {

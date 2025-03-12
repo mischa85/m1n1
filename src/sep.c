@@ -22,6 +22,8 @@ static asc_dev_t *sep_asc = NULL;
 
 int sep_init(void)
 {
+    printf("sep_init()\n");
+
     if (!sep_asc)
         sep_asc = asc_init("/arm-io/sep");
     if (!sep_asc)

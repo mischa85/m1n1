@@ -8,7 +8,7 @@
 // Disable framebuffer console unless verbose boot is enabled
 //#define FB_SILENT_MODE
 // Initialize USB early and break into proxy if device is opened within this time (sec)
-//#define EARLY_PROXY_TIMEOUT 5
+//#define EARLY_PROXY_TIMEOUT 30
 
 // Minimal build for bring-up
 //#define BRINGUP
@@ -19,7 +19,7 @@
 //#define RTKIT_SYSLOG
 
 // Target for device-specific debug builds
-//#define TARGET T6041
+#define TARGET T6041
 // Some devices like Apple TV HD use other uarts for debug console
 //#define TARGET_BOARD 0x34
 

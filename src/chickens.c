@@ -28,8 +28,8 @@ void init_t6021_blizzard(void);
 void init_t6021_avalanche(int rev);
 void init_t6031_sawtooth(void);
 void init_t6031_everest(int rev);
-void init_t6041_hamster(void);
-void init_t6041_capybara(void);
+void init_t6041_sawtooth(void);
+void init_t6041_everest(int rev);
 
 bool cpufeat_actlr_el2, cpufeat_fast_ipi, cpufeat_mmu_sprr;
 bool cpufeat_global_sleep, cpufeat_workaround_cyclone_cache;
@@ -48,14 +48,14 @@ const char *init_cpu(void)
     printf("  CPU part: 0x%x rev: 0x%x\n", part, rev);
 
     /* This is performed unconditionally on all cores (necessary?) */
-    if (part < MIDR_PART_T6041_HAMSTER) {
+    if (part < MIDR_PART_T6041_EVEREST) {
         if (is_ecore())
             reg_set(SYS_IMP_APL_EHID4, EHID4_DISABLE_DC_MVA | EHID4_DISABLE_DC_SW_L2_OPS);
         else
             reg_set(SYS_IMP_APL_HID4, HID4_DISABLE_DC_MVA | HID4_DISABLE_DC_SW_L2_OPS);
     }
 
-    if (part >= MIDR_PART_T8015_MONSOON && part < MIDR_PART_T6041_HAMSTER) {
+    if (part >= MIDR_PART_T8015_MONSOON && part < MIDR_PART_T6041_EVEREST) {
         /* Enable NEX powergating, the reset cycles might be overriden by chickens */
         if (!is_ecore()) {
             reg_mask(SYS_IMP_APL_HID13, HID13_RESET_CYCLES_MASK, HID13_RESET_CYCLES(12));
@@ -179,14 +179,14 @@ const char *init_cpu(void)
             init_t6031_sawtooth();
             break;
 
-        case MIDR_PART_T6041_HAMSTER:
-            cpu = "M4 Max Hamster";
-            init_t6041_hamster();
+        case MIDR_PART_T6041_EVEREST:
+            cpu = "M4 Max Everest";
+            init_t6041_everest(rev);
             break;
 
-        case MIDR_PART_T6041_CAPYBARA:
-            cpu = "M4 Max Capybara";
-            init_t6041_capybara();
+        case MIDR_PART_T6041_SAWTOOTH:
+            cpu = "M4 Max Sawtooth";
+            init_t6041_sawtooth();
             break;
 
         default:
@@ -194,14 +194,14 @@ const char *init_cpu(void)
             break;
     }
 
-    if (part < MIDR_PART_T6041_HAMSTER)
+    if (part < MIDR_PART_T6041_EVEREST)
         cpufeat_ovrd_accessible = true;
 
     if (part >= MIDR_PART_T8110_BLIZZARD)
         cpufeat_actlr_el2 = true;
 
     // T6041??????
-    if (part >= MIDR_PART_T8101_ICESTORM && part != MIDR_PART_T8301_THUNDER && part < MIDR_PART_T6041_HAMSTER) {
+    if (part >= MIDR_PART_T8101_ICESTORM && part != MIDR_PART_T8301_THUNDER && part < MIDR_PART_T6041_EVEREST) {
         int core = mrs(MPIDR_EL1) & 0xff;
 
         // Enable IRQs (at least necessary on t600x)
@@ -216,7 +216,7 @@ const char *init_cpu(void)
     }
 
     // T6041??????
-    if (part >= MIDR_PART_T8030_LIGHTNING && part < MIDR_PART_T6041_HAMSTER)
+    if (part >= MIDR_PART_T8030_LIGHTNING && part < MIDR_PART_T6041_EVEREST)
         msr(SYS_IMP_APL_AMX_CTL_EL1, 0x100);
 
     if (part >= MIDR_PART_T8015_MONSOON)
@@ -239,7 +239,7 @@ const char *init_cpu(void)
 
     // T6041??????
     // Enable branch prediction state retention across ACC sleep
-    if (part < MIDR_PART_T6041_HAMSTER)
+    if (part < MIDR_PART_T6041_EVEREST)
         reg_mask(SYS_IMP_APL_ACC_CFG, ACC_CFG_BP_SLEEP_MASK, ACC_CFG_BP_SLEEP(3));
 
     return cpu;

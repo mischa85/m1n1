@@ -674,6 +674,6 @@
 #define AIDR_EL1_ARCH_RETENTION BIT(2)
 #define AIDR_EL1_AMX            BIT(4)
 #define AIDR_EL1_TSO            BIT(9)
-#define AIDR_EL1_GXF            BIT(16)
+#define AIDR_EL1_GXF            BIT(14)
 #define AIDR_EL1_APFLG          BIT(19)
 #define AIDR_EL1_PSRV           BIT(20)
