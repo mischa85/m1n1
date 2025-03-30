@@ -26,8 +26,8 @@ hv = HV(iface, p, u)
 
 fb = u.ba.video.base
 
-PMU(u).reset_panic_counter()
+#PMU(u).reset_panic_counter()
 
 print(f"m1n1 base: 0x{u.base:x}")
 
-PMU(u).reset_panic_counter()
+#PMU(u).reset_panic_counter()

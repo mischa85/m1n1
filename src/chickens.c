@@ -38,6 +38,12 @@ const char *init_cpu(void)
 {
     const char *cpu = "Unknown";
 
+    #if TARGET == T6041
+    {
+        return cpu;
+    }
+    #endif
+
     msr(OSLAR_EL1, 0);
 
     /* This is performed unconditionally on all cores (necessary?) */

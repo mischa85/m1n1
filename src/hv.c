@@ -96,7 +96,9 @@ void hv_init(void)
     }
 
     // Set deep WFI back to defaults
+    #if TARGET != T6041
     reg_mask(SYS_IMP_APL_CYC_OVRD, CYC_OVRD_WFI_MODE_MASK, CYC_OVRD_WFI_MODE(0));
+    #endif
 
     sysop("dsb ishst");
     sysop("tlbi alle1is");
@@ -126,6 +128,7 @@ void hv_start(void *entry, u64 regs[4])
     if (gxf_enabled())
         gl2_call(hv_set_gxf_vbar, 0, 0, 0, 0);
 
+    /*
     hv_secondary_info.hcr = mrs(HCR_EL2);
     hv_secondary_info.hacr = mrs(HACR_EL2);
     hv_secondary_info.vtcr = mrs(VTCR_EL2);
@@ -144,6 +147,7 @@ void hv_start(void *entry, u64 regs[4])
     hv_secondary_info.cnthctl = mrs(CNTHCTL_EL2);
     hv_secondary_info.sprr_config = mrs(SYS_IMP_APL_SPRR_CONFIG_EL1);
     hv_secondary_info.gxf_config = mrs(SYS_IMP_APL_GXF_CONFIG_EL1);
+    */
 
     hv_arm_tick(false);
     hv_pinned_cpu = -1;
