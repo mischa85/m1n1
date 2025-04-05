@@ -1388,9 +1388,9 @@ class HV(Reloadable):
         self.iface.set_event_handler(EVENT.IRQTRACE, self.handle_irqtrace)
 
         # Map MMIO ranges as HW by default
-        for r in self.adt["/arm-io"].ranges:
-            print(f"Mapping MMIO range: {r.parent_addr:#x} .. {r.parent_addr + r.size:#x}")
-            self.add_tracer(irange(r.parent_addr, r.size), "HW", TraceMode.OFF)
+        #for r in self.adt["/arm-io"].ranges:
+        #    print(f"Mapping MMIO range: {r.parent_addr:#x} .. {r.parent_addr + r.size:#x}")
+        #    self.add_tracer(irange(r.parent_addr, r.size), "HW", TraceMode.OFF)
 
         hcr = HCR(self.u.mrs(HCR_EL2))
         if self.novm:
@@ -1773,14 +1773,16 @@ class HV(Reloadable):
         elif self.tba.revision == 3:
             self.iface.writemem(guest_base + self.bootargs_off, BootArgs_r3.build(self.tba))
 
-        #print("Setting secondary CPU RVBARs...")
-        #rvbar = self.entry & ~0xfff
-        #for cpu in self.adt["cpus"]:
-            #if cpu.state == "running":
-                #continue
-            #addr, size = cpu.cpu_impl_reg
-            #print(f"  {cpu.name}: [0x{addr:x}] = 0x{rvbar:x}")
-            #self.p.write64(addr, rvbar)
+        print("Setting secondary CPU RVBARs...")
+        rvbar = self.entry & ~0xfff
+        for cpu in self.adt["cpus"]:
+            if cpu.cpu_id > 4:
+                continue
+            if cpu.state == "running":
+                continue
+            addr, size = cpu.cpu_impl_reg
+            print(f"  {cpu.name}: [0x{addr:x}] = 0x{rvbar:x}")
+            self.p.write64(addr, rvbar)
 
     def _load_macho_symbols(self):
         self.symbol_dict = self.macho.symbols
@@ -1888,14 +1890,14 @@ class HV(Reloadable):
         exec(code, self.shell_locals)
 
     def start(self):
-        print("Disabling other iodevs...")
-        for iodev in IODEV:
-            if iodev != self.iodev:
-                print(f" - {iodev!s}")
-                self.p.iodev_set_usage(iodev, 0)
+        #print("Disabling other iodevs...")
+        #for iodev in IODEV:
+        #    if iodev != self.iodev:
+        #        print(f" - {iodev!s}")
+        #        self.p.iodev_set_usage(iodev, 0)
 
-        print("Doing essential MMIO remaps...")
-        self.map_essential()
+        #print("Doing essential MMIO remaps...")
+        #self.map_essential()
 
         print("Updating page tables...")
         self.pt_update()

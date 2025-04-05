@@ -11,7 +11,7 @@ if uname.sysname == "Darwin":
     if uname.machine == "arm64":
         TOOLCHAIN = "/opt/homebrew/opt/llvm/bin/"
     else:
-        TOOLCHAIN = "/usr/local/opt/llvm/bin/"
+        TOOLCHAIN = "~/LLVM-19.1.7-macOS-X64/bin/"
     USE_CLANG = "1"
 elif uname.sysname == "OpenBSD":
     DEFAULT_ARCH = "aarch64-none-elf-"
