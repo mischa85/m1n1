@@ -1,48 +1,31 @@
-#!/usr/bin/env python3
-# SPDX-License-Identifier: MIT
-import sys, pathlib
-sys.path.append(str(pathlib.Path(__file__).resolve().parents[1]))
-
+import logging
 from m1n1.setup import *
-from m1n1.hw.dart import DART
-from m1n1.hw.scaler import *
 from m1n1.utils import *
 from m1n1 import asm
 
+# Constants
+CODE_BUFFER_SIZE = 0x1000
+RESULT_BUFFER_SIZE = 0x100
+MAGIC_VALUE = 0x1234
+
 def main():
-    print("Reading CNTVCT_EL0...")
-    start = u.mrs("CNTVCT_EL0")
-    print(f"Start time: {start:#x}")
+    code = u.malloc(CODE_BUFFER_SIZE)
+    result_buf = u.malloc(RESULT_BUFFER_SIZE)
 
-    delay = 1000000  # tune as needed
-    target = start + delay
-    print(f"Waiting until CNTVCT_EL0 reaches {target:#x}")
-
-    while True:
-        now = u.mrs("CNTVCT_EL0")
-        if now >= target:
-            break
-
-    print("Reached target time, preparing WFI...")
-
-    code = u.malloc(0x1000)
-
-    magic = 0x1234
-    result = asm.ARMAsm("""
-        mov x1, {magic}
-        wfi
-        mov x0, x1
+    result = asm.ARMAsm(f"""
+        mov x1, {MAGIC_VALUE}     // set magic value
+        wfi                       // wait for interrupt
+        str x1, [x0]              // store x1 to result buffer at x0
         ret
-    """.format(magic=magic), code)
+    """, code, x0=result_buf)
+    result_value = u.read64(result_buf)
 
-    result_value = int.from_bytes(result.data[:2], byteorder='big')
-    
-    print(f"x1 value after WFI: {result_value:#x}")
+    logging.info(f"x1 value after WFI (from memory): {result_value:#x}")
 
-    if result_value == magic:
-        print("Register state preserved across WFI!")
+    if result_value == MAGIC_VALUE:
+        logging.info("✅ Register state preserved across WFI!")
     else:
-        print("Register state NOT preserved!")
+        logging.error("❌ Register state NOT preserved!")
 
 if __name__ == "__main__":
     main()
