@@ -126,6 +126,10 @@ static void smp_start_cpu(int index, int die, int cluster, int core, u64 impl, u
     if (spin_table[index].flag)
         return;
 
+    #if TARGET == T6041
+    return;
+    #endif
+
     printf("Starting CPU %d (%d:%d:%d)... ", index, die, cluster, core);
 
     memset(&spin_table[index], 0, sizeof(struct spin_table));
@@ -182,6 +186,10 @@ static void smp_stop_cpu(int index, int die, int cluster, int core, u64 impl, u6
 
     if (!spin_table[index].flag)
         return;
+
+    #if TARGET == T6041
+    return;
+    #endif
 
     printf("Stopping CPU %d (%d:%d:%d)... ", index, die, cluster, core);
 
@@ -288,7 +296,11 @@ void smp_start_secondaries(void)
             break;
         default:
             printf("CPU start offset is unknown for this SoC!\n");
+            #if TARGET == T6041
+            break;
+            #else
             return;
+            #endif
     }
 
     ADT_FOREACH_CHILD(adt, node)
@@ -359,7 +371,6 @@ void smp_start_secondaries(void)
                 continue;
             memcpy(cpu_impl_reg, &regs[index], 16);
         }
-
         if (i == boot_cpu_idx) {
             // Check if already locked
             if (read64(cpu_impl_reg[0]) & 1)
@@ -371,7 +382,6 @@ void smp_start_secondaries(void)
 
             continue;
         }
-
         u8 core = FIELD_GET(CPU_REG_CORE, reg);
         u8 cluster = FIELD_GET(CPU_REG_CLUSTER, reg);
         u8 die = FIELD_GET(CPU_REG_DIE, reg);

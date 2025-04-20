@@ -88,7 +88,7 @@ class ProxyUtils(Reloadable):
         self.simd_type = None
         self.simd = None
 
-        self.mmu_off = False
+        self.mmu_off = True
 
         self.inst_cache = {}
 
@@ -549,17 +549,17 @@ def bootstrap_port(iface, proxy):
         # Old m1n1 version -- assume non-USB serial link, force baudrate adjust
         do_baud = True
     except UartTimeout:
-        # Assume the receiving end is already at 1500000
-        iface.dev.baudrate = 1500000
+        # Assume the receiving end is already at 115200
+        iface.dev.baudrate = 115200
         do_baud = False
 
     if do_baud:
         try:
             iface.nop()
-            proxy.set_baud(1500000)
+            proxy.set_baud(115200)
         except UartTimeout:
             # May fail even if the setting did get applied; checked by the .nop next
-            iface.dev.baudrate = 1500000
+            iface.dev.baudrate = 115200
 
     iface.nop()
     iface.dev.timeout = to

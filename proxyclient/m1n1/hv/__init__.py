@@ -1430,14 +1430,14 @@ class HV(Reloadable):
         self.u.msr(MDSCR_EL1, MDSCR(MDE=1).value)
 
         # Enable AMX
-        amx_ctl = AMX_CONFIG(self.u.mrs(AMX_CONFIG_EL1))
-        amx_ctl.EN_EL1 = 1
-        self.u.msr(AMX_CONFIG_EL1, amx_ctl.value)
+        #amx_ctl = AMX_CONFIG(self.u.mrs(AMX_CONFIG_EL1))
+        #amx_ctl.EN_EL1 = 1
+        #self.u.msr(AMX_CONFIG_EL1, amx_ctl.value)
 
         # Set guest AP keys
-        self.u.msr(VMKEYLO_EL2, 0x4E7672476F6E6147)
-        self.u.msr(VMKEYHI_EL2, 0x697665596F755570)
-        self.u.msr(APSTS_EL12, 1)
+        #self.u.msr(VMKEYLO_EL2, 0x4E7672476F6E6147)
+        #self.u.msr(VMKEYHI_EL2, 0x697665596F755570)
+        #self.u.msr(APSTS_EL12, 1)
 
         self.map_vuart()
 
@@ -1495,9 +1495,9 @@ class HV(Reloadable):
                     if idx in dev_by_id:
                         hook_pmgr_dev(dev_by_id[idx])
 
-        for name in hook_devs:
-            dev = dev_by_name[name]
-            hook_pmgr_dev(dev)
+        #for name in hook_devs:
+            #dev = dev_by_name[name]
+            #hook_pmgr_dev(dev)
 
         pmgr0_start = pmgr.get_reg(0)[0]
 
@@ -1773,14 +1773,14 @@ class HV(Reloadable):
         elif self.tba.revision == 3:
             self.iface.writemem(guest_base + self.bootargs_off, BootArgs_r3.build(self.tba))
 
-        print("Setting secondary CPU RVBARs...")
-        rvbar = self.entry & ~0xfff
-        for cpu in self.adt["cpus"]:
-            if cpu.state == "running":
-                continue
-            addr, size = cpu.cpu_impl_reg
-            print(f"  {cpu.name}: [0x{addr:x}] = 0x{rvbar:x}")
-            self.p.write64(addr, rvbar)
+        #print("Setting secondary CPU RVBARs...")
+        #rvbar = self.entry & ~0xfff
+        #for cpu in self.adt["cpus"]:
+            #if cpu.state == "running":
+                #continue
+            #addr, size = cpu.cpu_impl_reg
+            #print(f"  {cpu.name}: [0x{addr:x}] = 0x{rvbar:x}")
+            #self.p.write64(addr, rvbar)
 
     def _load_macho_symbols(self):
         self.symbol_dict = self.macho.symbols
@@ -1904,17 +1904,17 @@ class HV(Reloadable):
         print(f"Uploading ADT (0x{len(adt_blob):x} bytes)...")
         self.iface.writemem(self.adt_base, adt_blob)
 
-        print("Improving logo...")
-        self.p.fb_improve_logo()
+        #print("Improving logo...")
+        #self.p.fb_improve_logo()
 
-        print("Shutting down framebuffer...")
-        self.p.fb_shutdown(True)
+        #print("Shutting down framebuffer...")
+        #self.p.fb_shutdown(True)
 
-        print("Enabling SPRR...")
-        self.u.msr(SPRR_CONFIG_EL1, 1)
+        #print("Enabling SPRR...")
+        #self.u.msr(SPRR_CONFIG_EL1, 1)
 
-        print("Enabling GXF...")
-        self.u.msr(GXF_CONFIG_EL1, 1)
+        #print("Enabling GXF...")
+        #self.u.msr(GXF_CONFIG_EL1, 1)
 
         print(f"Jumping to entrypoint at 0x{self.entry:x}")
 

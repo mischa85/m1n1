@@ -28,6 +28,7 @@
 #define T6030 0x6030
 #define T6031 0x6031
 #define T6034 0x6034
+#define T6041 0x6041
 
 #ifdef TARGET
 
@@ -44,6 +45,8 @@
 #define EARLY_UART_BASE 0x22e600000
 #elif TARGET == T6030
 #define EARLY_UART_BASE 0x289200000
+#elif TARGET == T6041
+#define EARLY_UART_BASE 0x429200000
 #elif TARGET == T7000 || TARGET == T7001 || TARGET == S8000 || TARGET == S8001 ||                  \
     TARGET == S8003 || TARGET == T8010 || TARGET == T8011
 #if TARGET == T7000 && defined(TARGET_BOARD) && TARGET_BOARD == 0x34 // Apple TV HD

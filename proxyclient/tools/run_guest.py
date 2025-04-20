@@ -93,7 +93,7 @@ if args.raw:
 else:
     hv.load_macho(payload, symfile=symfile)
 
-PMU(u).reset_panic_counter()
+#PMU(u).reset_panic_counter()
 
 for i in args.script:
     try:
