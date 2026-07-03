@@ -2868,6 +2868,20 @@ int kboot_boot(void *kernel)
 
     usb_init();
     /*
+     * T6041 USB bring-up: Linux has no ATC-PHY (atc-phy,t6040) or sn201202x
+     * PD driver yet, so it cannot switch the USB2 PHYs out of the device
+     * mode usb_init() just configured. Flip ports 1 and 2 to host mode here
+     * so the guest's plain dwc3 host stack ("snps,dwc3" + dr_mode="host" in
+     * t6041-j616c.dts) gets working HS host ports. Port 0 is deliberately
+     * left in device mode: under the HV it carries the m1n1 proxy/console.
+     * Dev-branch hack; the real fix is porting atcphy + the SPMI PD stack.
+     */
+    /*
+     * T6041: the ACE3 SSPS->S0 powerup (VBUS/DFP) runs inside
+     * usb_init()/usb_spmi_init(). The Linux atcphy driver owns the USB2
+     * PHY host/device lifecycle, so no PHY flip is needed here anymore.
+     */
+    /*
      * Power on the internal WLAN/BT module (BCM4387) before PCIe bring-up.
      * The ADT /amfm node's "function-reg_on" is the Broadcom WL_REG_ON,
      * driven via an SMC key (T6041: 'gP13'). Without it the chip stays

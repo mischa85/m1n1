@@ -7,6 +7,7 @@
 #include "iodev.h"
 #include "malloc.h"
 #include "pmgr.h"
+#include "spmi.h"
 #include "string.h"
 #include "tps6598x.h"
 #include "types.h"
@@ -120,6 +121,92 @@ static int usb_drd_get_regs(u32 idx, struct usb_drd_regs *regs)
         return -1;
     }
 
+    return 0;
+}
+
+/* USB2 PHY registers (bring-up naming borrowed from Linux atc.c) */
+#define USB2PHY_USBCTL           0x00
+#define USB2PHY_USBCTL_RUN       BIT(1)
+#define USB2PHY_USBCTL_ISOLATION BIT(2)
+
+#define USB2PHY_CTL             0x04
+#define USB2PHY_CTL_RESET       BIT(0)
+#define USB2PHY_CTL_PORT_RESET  BIT(1)
+#define USB2PHY_CTL_APB_RESET_N BIT(2)
+#define USB2PHY_CTL_SIDDQ       BIT(3)
+
+#define USB2PHY_SIG             0x08
+#define USB2PHY_SIG_VBUS_FORCES 0xf /* VBUSDET/VBUSVLDEXT force val+en */
+#define USB2PHY_SIG_HOST        (7 << 12)
+
+#define USB2PHY_MISCTUNE                 0x1c
+#define USB2PHY_MISCTUNE_APBCLK_GATE_OFF BIT(29)
+#define USB2PHY_MISCTUNE_REFCLK_GATE_OFF BIT(30)
+
+/*
+ * T6041 bring-up hack: reconfigure a port's USB2 PHY from the device mode
+ * usb_phy_bringup() leaves behind to HOST mode, so a plain dwc3 host stack
+ * ("snps,dwc3" + dr_mode="host", no ATC-PHY/PD driver) works in Linux.
+ *
+ * Mirrors Linux atc.c: atcphy_dwc3_reset_assert -> atcphy_usb2_power_off ->
+ * set USB2PHY_SIG_HOST while the PHY is off (dwc3-apple.c: the mode "must be
+ * configured while it is still powered off") -> atcphy_usb2_power_on ->
+ * atcphy_dwc3_reset_deassert.
+ */
+int usb_phy_bringup_host(u32 idx)
+{
+    if (idx >= USB_IODEV_COUNT)
+        return -1;
+
+    struct usb_drd_regs r;
+    if (usb_drd_get_regs(idx, &r) < 0)
+        return -1;
+
+    /* dwc3 reset assert */
+    clear32(r.drd_regs_unk3 + PIPEHANDLER_AON_GEN, PIPEHANDLER_AON_GEN_DWC3_RESET_N);
+    set32(r.drd_regs_unk3 + PIPEHANDLER_AON_GEN, PIPEHANDLER_AON_GEN_DWC3_FORCE_CLAMP_EN);
+
+    /* usb2 phy power off */
+    write32(r.atc + USB2PHY_USBCTL, USB2PHY_USBCTL_ISOLATION);
+    udelay(10);
+    set32(r.atc + USB2PHY_CTL, USB2PHY_CTL_SIDDQ);
+    udelay(10);
+    set32(r.atc + USB2PHY_CTL, USB2PHY_CTL_PORT_RESET);
+    udelay(10);
+    set32(r.atc + USB2PHY_CTL, USB2PHY_CTL_RESET);
+    udelay(10);
+    clear32(r.atc + USB2PHY_CTL, USB2PHY_CTL_APB_RESET_N);
+    udelay(10);
+    set32(r.atc + USB2PHY_MISCTUNE, USB2PHY_MISCTUNE_APBCLK_GATE_OFF);
+    set32(r.atc + USB2PHY_MISCTUNE, USB2PHY_MISCTUNE_REFCLK_GATE_OFF);
+
+    /* host mode, while the PHY is off */
+    set32(r.atc + USB2PHY_SIG, USB2PHY_SIG_HOST);
+
+    /* usb2 phy power on */
+    set32(r.atc + USB2PHY_SIG, USB2PHY_SIG_VBUS_FORCES);
+    udelay(10);
+    clear32(r.atc + USB2PHY_CTL, USB2PHY_CTL_SIDDQ);
+    udelay(10);
+    clear32(r.atc + USB2PHY_CTL, USB2PHY_CTL_RESET);
+    udelay(10);
+    clear32(r.atc + USB2PHY_CTL, USB2PHY_CTL_PORT_RESET);
+    udelay(10);
+    set32(r.atc + USB2PHY_CTL, USB2PHY_CTL_APB_RESET_N);
+    udelay(10);
+    clear32(r.atc + USB2PHY_MISCTUNE, USB2PHY_MISCTUNE_APBCLK_GATE_OFF);
+    clear32(r.atc + USB2PHY_MISCTUNE, USB2PHY_MISCTUNE_REFCLK_GATE_OFF);
+    write32(r.atc + USB2PHY_USBCTL, USB2PHY_USBCTL_RUN);
+
+    /* keep the dummy USB3 pipe mux + override usb_phy_bringup() set up */
+    write32(r.drd_regs_unk3 + PIPEHANDLER_MUX_CTRL, PIPEHANDLER_MUX_CTRL_DUMMY);
+    write32(r.drd_regs_unk3 + PIPEHANDLER_NONSELECTED_OVERRIDE, 0x9332);
+
+    /* dwc3 reset deassert */
+    clear32(r.drd_regs_unk3 + PIPEHANDLER_AON_GEN, PIPEHANDLER_AON_GEN_DWC3_FORCE_CLAMP_EN);
+    set32(r.drd_regs_unk3 + PIPEHANDLER_AON_GEN, PIPEHANDLER_AON_GEN_DWC3_RESET_N);
+
+    printf("usb: port %d USB2 PHY switched to host mode\n", idx);
     return 0;
 }
 
@@ -256,10 +343,183 @@ static tps6598x_dev_t *hpm_init(i2c_dev_t *i2c, const char *hpm_path)
 
 void usb_spmi_init(void)
 {
+    /*
+     * Power the ACE3s up to S0 so the ports can source VBUS / act as DFP
+     * (needed for USB host mode in the booted OS). Works when running at
+     * EL2 (bare m1n1); under the m1n1 HV the guest's SPMI commands get no
+     * reply and this fails gracefully — the host m1n1 already did it.
+     */
+    usb_spmi_powerup_hpms();
+
     for (int idx = 0; idx < USB_IODEV_COUNT; ++idx)
         usb_phy_bringup(idx); /* Fails on missing devices, just continue */
 
     usb_is_initialized = true;
+}
+
+/*
+ * ACE3 (usbc,sn201202x,spmi) access: the classic TPS6598x/CD321x I2C register
+ * map ("logical registers") tunneled over SPMI. Transport per
+ * https://asahilinux.org/docs/hw/peripherals/ace3/:
+ * write 0x80|lreg to SPMI reg 0x00, poll bit7 clear, then the logical
+ * register data window is SPMI regs 0x20.. (reads mirror it, writes commit).
+ */
+#define ACE3_REG_SEL  0x00
+#define ACE3_SEL_BUSY 0x80
+#define ACE3_REG_SIZE 0x1f
+#define ACE3_REG_DATA 0x20
+
+#define ACE3_LREG_CMD1        0x08
+#define ACE3_LREG_DATA1       0x09
+#define ACE3_LREG_POWER_STATE 0x20
+#define ACE3_CMD_INVALID      0x444d4321 // "!CMD" as LE u32
+
+static int ace3_select(spmi_dev_t *spmi, u8 slave, u8 lreg)
+{
+    /*
+     * The selection MUST use the basic register write/read SPMI opcodes;
+     * extended access to reg 0x00 is ACKed but treated as a "normal write"
+     * that does not trigger the selection (hardware-verified: SEL_BUSY
+     * never clears when written via SPMI_OPC_EXT_WRITE).
+     *
+     * The real completion signal is an interrupt through the SPMI
+     * controller; all we can do is poll the busy bit, which is racy right
+     * after issuing the command (the register still reads its pre-command
+     * value until the hardware picks it up, and the final value is not
+     * reliably the selected address either — hardware-verified both ways).
+     * Wait for the hardware to assert busy first, then poll for it to
+     * clear, accepting whatever value remains.
+     */
+    /*
+     * The chip is deaf to its first transactions after a cold boot (it
+     * silently swallows commands for a while, hardware-verified) — a
+     * generous retry budget with real gaps between attempts is required
+     * this early in boot.
+     */
+    u8 v;
+    for (int attempt = 0; attempt < 10; attempt++) {
+        if (attempt)
+            udelay(10000);
+        if (spmi_reg_write(spmi, slave, ACE3_REG_SEL, ACE3_SEL_BUSY | lreg) < 0)
+            return -1;
+        udelay(1000);
+        for (int i = 0; i < 1000; i++) {
+            if (spmi_reg_read(spmi, slave, ACE3_REG_SEL, &v) < 0)
+                return -1;
+            if (!(v & ACE3_SEL_BUSY))
+                break;
+            udelay(100);
+        }
+        if (v & ACE3_SEL_BUSY)
+            continue;
+        /* a successful selection latches the (non-zero) size into 0x1f */
+        if (spmi_reg_read(spmi, slave, ACE3_REG_SIZE, &v) < 0)
+            return -1;
+        if (v)
+            return 0;
+    }
+    return -1;
+}
+
+static int ace3_lread(spmi_dev_t *spmi, u8 slave, u8 lreg, u8 *bfr, size_t len)
+{
+    if (ace3_select(spmi, slave, lreg) < 0)
+        return -1;
+    return spmi_ext_read(spmi, slave, ACE3_REG_DATA, bfr, len);
+}
+
+static int ace3_lwrite(spmi_dev_t *spmi, u8 slave, u8 lreg, const u8 *bfr, size_t len)
+{
+    if (ace3_select(spmi, slave, lreg) < 0)
+        return -1;
+    return spmi_ext_write(spmi, slave, ACE3_REG_DATA, bfr, len);
+}
+
+static int ace3_command(spmi_dev_t *spmi, u8 slave, const char *cmd, const u8 *data, size_t len)
+{
+    u32 status;
+
+    if (len && ace3_lwrite(spmi, slave, ACE3_LREG_DATA1, data, len) < 0)
+        return -1;
+    if (ace3_lwrite(spmi, slave, ACE3_LREG_CMD1, (const u8 *)cmd, 4) < 0)
+        return -1;
+    for (int i = 0; i < 200; i++) {
+        if (ace3_lread(spmi, slave, ACE3_LREG_CMD1, (u8 *)&status, 4) < 0)
+            return -1;
+        if (status == ACE3_CMD_INVALID)
+            return -1;
+        if (status == 0)
+            return 0;
+        udelay(500);
+    }
+    return -1;
+}
+
+/*
+ * Put the ACE3 USB-PD controllers of the user-facing USB-C ports (except
+ * port 0) into system power state S0 via the "SSPS" command — the SPMI
+ * equivalent of tps6598x_powerup(). iBoot leaves them in a low power state
+ * (POWER_STATE=7, hardware-verified on T6041) where the port works as
+ * sink/UFP only: it never sources VBUS or acts as DFP, so USB host mode
+ * sees no device attach. Port 0 (rid 0) is skipped: it carries the m1n1
+ * proxy/console under the HV, and device mode works fine in the low state.
+ * Non-data ports (MagSafe, port-type != 2) are skipped too.
+ */
+void usb_spmi_powerup_hpms(void)
+{
+    char path[24];
+
+    for (int bus = 0; bus < 8; bus++) {
+        snprintf(path, sizeof(path), "/arm-io/nub-spmi-a%d", bus);
+        int parent = adt_path_offset(adt, path);
+        if (parent < 0)
+            continue;
+
+        spmi_dev_t *spmi = NULL;
+        int node = parent;
+        ADT_FOREACH_CHILD(adt, node)
+        {
+            if (!adt_is_compatible(adt, node, "usbc,sn201202x,spmi"))
+                continue;
+
+            u32 rid, port_type = 0, len = 0;
+            if (ADT_GETPROP(adt, node, "rid", &rid) < 0 || rid == 0)
+                continue;
+            ADT_GETPROP(adt, node, "port-type", &port_type);
+            if (port_type != 2)
+                continue;
+            const u32 *reg = adt_getprop(adt, node, "reg", &len);
+            if (!reg || len < 4)
+                continue;
+            u8 slave = reg[0];
+
+            if (!spmi) {
+                spmi = spmi_init(path);
+                if (!spmi) {
+                    printf("usb: spmi_init failed for %s\n", path);
+                    break;
+                }
+            }
+
+            u8 pstate;
+            if (ace3_lread(spmi, slave, ACE3_LREG_POWER_STATE, &pstate, 1) < 0) {
+                printf("usb: hpm rid %d: POWER_STATE read failed\n", rid);
+                continue;
+            }
+            if (pstate == 0)
+                continue;
+
+            const u8 s0 = 0;
+            if (ace3_command(spmi, slave, "SSPS", &s0, 1) < 0) {
+                printf("usb: hpm rid %d: SSPS failed\n", rid);
+                continue;
+            }
+            printf("usb: hpm rid %d powered up (POWER_STATE %d -> S0)\n", rid, pstate);
+        }
+
+        if (spmi)
+            spmi_shutdown(spmi);
+    }
 }
 
 static int usb_init_i2c(const char *i2c_path)
