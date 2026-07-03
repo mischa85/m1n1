@@ -1451,6 +1451,7 @@ class HV(Reloadable):
             self.u.msr(APSTS_EL12, 1)
 
         self.map_vuart()
+        self.map_dockchannel_vuart()
 
         # ACTLR depends on the CPU part
         part = MIDR(self.u.mrs(MIDR_EL1)).PART
@@ -1470,6 +1471,18 @@ class HV(Reloadable):
         irq = node.interrupts[0]
         self.p.hv_map_vuart(base, irq, self.iodev)
         self.add_tracer(zone, "VUART", TraceMode.RESERVED)
+
+    def map_dockchannel_vuart(self):
+        # M3/M4+ emit the console over the DockChannel UART, not the s5l UART.
+        # Hook its data page so guest writes are forwarded to the m1n1 console
+        # (-> ttyACM). Skip gracefully on machines without one.
+        try:
+            node = self.adt["/arm-io/dockchannel-uart"]
+            base = node.get_reg(0)[0]
+        except (KeyError, AttributeError):
+            return
+        self.p.hv_map_dockchannel_vuart(base)
+        self.add_tracer(irange(base + 0x4000, 0x1000), "DOCKVUART", TraceMode.RESERVED)
 
     def map_essential(self):
         # Things we always map/take over, for the hypervisor to work

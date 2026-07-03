@@ -148,3 +148,63 @@ void hv_map_vuart(u64 base, int irq, iodev_id_t iodev)
     vuart_irq = irq;
     active = true;
 }
+
+/*
+ * DockChannel UART vuart: M3/M4+ emit the guest console over the DockChannel
+ * UART (data regs at device-base + 0x4000: TX8 @ +0x04, TX_FREE @ +0x14).
+ * Forward guest writes to the m1n1 console (-> ttyACM) so guest Linux is
+ * visible over the existing USB link, no SBU/debug hardware. TX-only, and
+ * line-buffered to avoid per-char printf from inside the MMIO trap handler.
+ */
+static void dockchannel_vuart_putc(uint8_t b)
+{
+    static char buf[256];
+    static unsigned int pos = 0;
+
+    if (b == '\r')
+        return;
+
+    if (b == '\n') {
+        buf[pos] = 0;
+        printf("GUEST: %s\n", buf);
+        pos = 0;
+        return;
+    }
+
+    buf[pos++] = b;
+    if (pos >= sizeof(buf) - 1) {
+        buf[pos] = 0;
+        printf("GUEST: %s", buf);
+        pos = 0;
+    }
+}
+
+static bool handle_dockchannel_vuart(struct exc_info *ctx, u64 addr, u64 *val, bool write,
+                                     int width)
+{
+    UNUSED(ctx);
+    UNUSED(width);
+
+    addr &= 0xfff;
+
+    if (write) {
+        if (addr == 0x04) /* DATA_TX8 */
+            dockchannel_vuart_putc((uint8_t)*val);
+    } else {
+        switch (addr) {
+            case 0x14: /* DATA_TX_FREE: always report space so the guest never blocks */
+                *val = 16;
+                break;
+            default: /* DATA_RX_COUNT (0x2c) and everything else: no host->guest input */
+                *val = 0;
+                break;
+        }
+    }
+
+    return true;
+}
+
+void hv_map_dockchannel_vuart(u64 base)
+{
+    hv_map_hook(base + 0x4000, handle_dockchannel_vuart, 0x1000);
+}
