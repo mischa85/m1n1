@@ -139,6 +139,7 @@ enum apcie_type {
     APCIE_T602X = 1,
     APCIE_T8122 = 2,
     APCIE_T6031 = 3,
+    APCIE_T6040 = 4,
 };
 
 struct reg_info {
@@ -152,6 +153,8 @@ struct reg_info {
     int phy_ip_idx;
     int axi_idx;
     int fuse_idx;
+    int cio3pll_idx;     /* T6040: CIO3 PLL core block */
+    int pcieclkgen_idx;  /* T6040: PCIe clock generator block */
     bool alt_phy_start;
 };
 
@@ -205,6 +208,28 @@ static const struct reg_info regs_t6031 = {
     .phy_idx = 2,
     .phy_ip_idx = 3,
     .axi_idx = 4,
+};
+
+/*
+ * T6040/T6041 (M4 Pro/Max). ADT layout = 7 shared regs then 7 per port.
+ * Shared: [0]config/ECAM [1]rc/common [2]phy(coalesced: common +0x4000,
+ * lane +0x8000) [3]phy-ip [4]axi2af [5]cio3pll [6]pcieclkgen.
+ * PHY bring-up differs from T8122 (see the APCIE_T6040 branch below);
+ * the per-port path reuses the T8122 code (.compat = APCIE_T8122).
+ */
+static const struct reg_info regs_t6040 = {
+    .type = APCIE_T6040,
+    .compat = APCIE_T8122,
+    .shared_reg_count = 7,
+    .config_idx = 0,
+    .rc_idx = 1,
+    .phy_common_idx = 2,
+    .phy_idx = 2,
+    .phy_ip_idx = 3,
+    .axi_idx = 4,
+    .fuse_idx = 5,
+    .cio3pll_idx = 5,
+    .pcieclkgen_idx = 6,
 };
 
 static bool pcie_initialized = false;
@@ -279,6 +304,12 @@ static int pcie_init_controller(int controller, const char *path)
         fuse_bits = NULL;
         state->pcie_regs = &regs_t602x;
         printf("pcie: Initializing t6020 PCIe controller\n");
+    } else if (adt_is_compatible(adt, adt_offset, "apcie,t6040")) {
+        // T6040/T6041 (M4 Pro/Max): T8122-like layout + a distinct PHY/PLL
+        // bring-up (cio3pll/pcieclkgen blocks, PhyPhy offset-0x4 handshake).
+        fuse_bits = NULL;
+        state->pcie_regs = &regs_t6040;
+        printf("pcie: Initializing t6040 PCIe controller\n");
     } else if (adt_is_compatible(adt, adt_offset, "apcie,t6031")) {
         fuse_bits = NULL;
         state->pcie_regs = &regs_t6031;
@@ -404,8 +435,9 @@ static int pcie_init_controller(int controller, const char *path)
         return -1;
     }
 
-    /* ??? */
-    if (controller == APCIE)
+    /* ??? (T6040 leaves rc+0x4 at its iBoot value = lane-cfg; clobbering it
+     * with 0 is harmless there but we match the proven hw bring-up.) */
+    if (controller == APCIE && state->pcie_regs->type != APCIE_T6040)
         write32(state->rc_base + 0x4, 0);
 
     if (!adt_getprop(adt, adt_offset, "apcie-common-tunables", NULL)) {
@@ -424,6 +456,85 @@ static int pcie_init_controller(int controller, const char *path)
     } else if (tunables_apply_local(path, "apcie-phy-tunables", state->pcie_regs->phy_idx)) {
         printf("pcie: Error applying %s for %s\n", "apcie-phy-tunables", path);
         return -1;
+    }
+
+    if (state->pcie_regs->type == APCIE_T6040) {
+        /*
+         * T6040/T6041 (M4) PHY/PLL bring-up. Verified on T6041 hardware via
+         * the stepwise proxy script t6041-pcie/pcie_phyinit4.py. The CIO3 PLL
+         * is already locked by iBoot; we apply the cio3pll/pcieclkgen tunables,
+         * request the shared PHY clock, run the PhyPhy(+0x8000) handshake with
+         * the bit0/bit4 sequencing at offset 0x4, and program the PHY-IP block
+         * (reg[3]). phy = reg[2]+0x8000, phy_common = reg[2]+0x4000 (set above
+         * for compat==T8122), phy_ip = reg[3].
+         */
+        u64 phy = state->phy_base[0];
+        u64 phy_common = state->phy_common_base;
+        u64 phy_ip = state->phy_ip_base[0];
+        u64 clkgen_base;
+
+        if (adt_get_reg(adt, adt_path, "reg", state->pcie_regs->pcieclkgen_idx, &clkgen_base,
+                        NULL)) {
+            printf("pcie: Error getting pcieclkgen reg for %s\n", path);
+            return -1;
+        }
+
+        if (adt_getprop(adt, adt_offset, "apcie-cio3pllcore-tunables", NULL) &&
+            tunables_apply_local(path, "apcie-cio3pllcore-tunables",
+                                 state->pcie_regs->cio3pll_idx)) {
+            printf("pcie: Error applying apcie-cio3pllcore-tunables for %s\n", path);
+            return -1;
+        }
+        if (adt_getprop(adt, adt_offset, "apcie-pcieclkgen-tunables", NULL) &&
+            tunables_apply_local(path, "apcie-pcieclkgen-tunables",
+                                 state->pcie_regs->pcieclkgen_idx)) {
+            printf("pcie: Error applying apcie-pcieclkgen-tunables for %s\n", path);
+            return -1;
+        }
+
+        /* Enable PLL / request the shared PHY clock (PLL already locked). */
+        set32(clkgen_base + 0x0, 0x1);
+        set32(clkgen_base + 0x0, 0x20);
+
+        /* Lane clock handshake at PhyPhy offset 0x0. */
+        set32(phy + APCIE_PHY_CTRL, APCIE_PHY_CTRL_CLK0REQ);
+        if (poll32(phy + APCIE_PHY_CTRL, APCIE_PHY_CTRL_CLK0ACK, APCIE_PHY_CTRL_CLK0ACK, 50000)) {
+            printf("pcie: t6040 PHY CLK0 timeout\n");
+            return -1;
+        }
+        set32(phy + APCIE_PHY_CTRL, APCIE_PHY_CTRL_CLK1REQ);
+        if (poll32(phy + APCIE_PHY_CTRL, APCIE_PHY_CTRL_CLK1ACK, APCIE_PHY_CTRL_CLK1ACK, 50000)) {
+            printf("pcie: t6040 PHY CLK1 timeout\n");
+            return -1;
+        }
+        clear32(phy + APCIE_PHY_CTRL, 0x10);
+
+        /* PHY-IP: begin (offset 0x4 bit0), apply PLL+AUSPMA tunables to reg[3],
+         * clear the gate at PHY-IP +0x90 bit16, then complete (offset 0x4 bit4). */
+        set32(phy + 0x4, 0x1);
+        if (tunables_apply_local_addr(path, "apcie-phy-ip-pll-tunables", phy_ip)) {
+            printf("pcie: Error applying apcie-phy-ip-pll-tunables for %s\n", path);
+            return -1;
+        }
+        if (tunables_apply_local_addr(path, "apcie-phy-ip-auspma-tunables", phy_ip)) {
+            printf("pcie: Error applying apcie-phy-ip-auspma-tunables for %s\n", path);
+            return -1;
+        }
+        clear32(phy_ip + 0x90, 0x00010000);
+        set32(phy + 0x4, 0x10);
+        if (poll32(phy + 0x8, 0x1, 0x1, 300000)) {
+            printf("pcie: t6040 PHY not ready (PhyPhy+0x8 bit0)\n");
+            return -1;
+        }
+
+        /* Finalize shared PHY + RC common. */
+        set32(phy_common + 0x0, 0x1);
+        set32(phy + 0x0, 0x08000000);
+        write32(state->rc_base + 0x54, 0x140);
+        /* best-effort: RC "ready" (bit0); observed already set on T6041 */
+        poll32(state->rc_base + 0x58, 0x1, 0x1, 100000);
+
+        goto pcie_ports;
     }
 
     if (state->pcie_regs->type == APCIE_T602X || state->pcie_regs->type == APCIE_T6031) {
@@ -526,6 +637,7 @@ static int pcie_init_controller(int controller, const char *path)
         }
     }
 
+pcie_ports:
     for (u32 port = 0; port < state->port_count; port++) {
         char bridge[64];
         int bridge_offset;

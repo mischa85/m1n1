@@ -21,6 +21,7 @@
 #include "pmgr.h"
 #include "sep.h"
 #include "sio.h"
+#include "smc.h"
 #include "smp.h"
 #include "tunables.h"
 #include "types.h"
@@ -2867,15 +2868,41 @@ int kboot_boot(void *kernel)
 
     usb_init();
     /*
-     * T6041 (M4 Max): pcie_init() hangs under the m1n1 HV (silently, after the
-     * PMGR power-enable, never returns) — likely PCIe link-up/device wait that
-     * doesn't complete in the virtualized M4 environment. PCIe (NVMe/TB) is not
-     * needed for a headless serial-console bring-up, so skip it on T6041.
+     * Power on the internal WLAN/BT module (BCM4387) before PCIe bring-up.
+     * The ADT /amfm node's "function-reg_on" is the Broadcom WL_REG_ON,
+     * driven via an SMC key (T6041: 'gP13'). Without it the chip stays
+     * unpowered and the PCIe link never trains (LTSSM finds no partner).
+     * Mirrors the HDMI power-on in src/dcp.c. 0x800001 = enable | drive-high.
      */
-    if (chip_id == T6041)
-        printf("pcie: skipping pcie_init() on T6041 (hangs under HV; not needed for headless boot)\n");
-    else
-        pcie_init();
+    {
+        int amfm = adt_path_offset(adt, "/amfm");
+        struct {
+            u32 phandle;
+            char four_cc[4];
+            u32 gpio;
+            u32 unk;
+        } reg_on;
+        if (amfm >= 0 &&
+            adt_getprop_copy(adt, amfm, "function-reg_on", &reg_on, sizeof(reg_on)) >= 0) {
+            smc_dev_t *smc = smc_init();
+            if (smc) {
+                printf("pcie: powering on WLAN/BT via SMC reg_on (WL_REG_ON)\n");
+                smc_write_u32(smc, reg_on.gpio, 0x800001);
+                smc_shutdown(smc);
+            } else {
+                printf("pcie: WLAN reg_on: smc_init failed\n");
+            }
+        }
+    }
+    /*
+     * T6041 (M4 Max): pcie_init() now has a real t6040 path (src/pcie.c
+     * APCIE_T6040 branch), verified to bring the apcie0 root complex up on
+     * hardware (ECAM enumerates the Apple root port). The earlier "hangs on
+     * T6041" note predates that path — the wedge was accessing the PHY-IP
+     * block before its clock was up, which the t6040 sequence now avoids.
+     * All polls have timeouts, so a failure returns -1 rather than hanging.
+     */
+    pcie_init();
     /*
      * T6041 (M4 Max) and the wider M4 family gate the DART aperture filter
      * (DAPF) registers behind the new dart-clock-protection/gapf mechanism
