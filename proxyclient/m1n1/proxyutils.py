@@ -300,13 +300,18 @@ class ProxyUtils(Reloadable):
     def print_l2c_regs(self):
         print()
         print("  == L2C Registers ==")
-        l2c_err_sts = self.mrs(L2C_ERR_STS_EL1)
+        # The L2C_ERR_* registers are not accessible on some SoCs (e.g. M4,
+        # where the MSR/MRS trap). Guard so a trap here doesn't abort the
+        # whole exception context dump.
+        try:
+            l2c_err_sts = self.mrs(L2C_ERR_STS_EL1, silent=True)
+            print(f"  L2C_ERR_STS: {l2c_err_sts:#x}")
+            print(f"  L2C_ERR_ADR: {self.mrs(L2C_ERR_ADR_EL1, silent=True):#x}");
+            print(f"  L2C_ERR_INF: {self.mrs(L2C_ERR_INF_EL1, silent=True):#x}");
+            self.msr(L2C_ERR_STS_EL1, l2c_err_sts, silent=True) # Clear the flag bits
+        except ProxyError:
+            print("  (not accessible on this SoC)")
 
-        print(f"  L2C_ERR_STS: {l2c_err_sts:#x}")
-        print(f"  L2C_ERR_ADR: {self.mrs(L2C_ERR_ADR_EL1):#x}");
-        print(f"  L2C_ERR_INF: {self.mrs(L2C_ERR_INF_EL1):#x}");
-
-        self.msr(L2C_ERR_STS_EL1, l2c_err_sts) # Clear the flag bits
         self.msr(DAIF, self.mrs(DAIF) | 0x100) # Re-enable SError exceptions
 
     def print_context(self, ctx, is_fault=True, addr=lambda a: f"0x{a:x}", sym=None, num_ctx=9):
