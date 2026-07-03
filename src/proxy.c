@@ -499,6 +499,9 @@ int proxy_process(ProxyRequest *request, ProxyReply *reply)
         case P_HV_MAP_DOCKCHANNEL_VUART:
             hv_map_dockchannel_vuart(request->args[0]);
             break;
+        case P_HV_MAP_NVME_EL2:
+            hv_map_nvme_el2(request->args[0]);
+            break;
         case P_HV_MAP_VIRTIO:
             hv_map_virtio(request->args[0], (void *)request->args[1]);
             break;

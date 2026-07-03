@@ -72,6 +72,7 @@ bool hv_trace_irq(u32 type, u32 num, u32 count, u32 flags);
 void hv_vuart_poll(void);
 void hv_map_vuart(u64 base, int irq, iodev_id_t iodev);
 void hv_map_dockchannel_vuart(u64 base);
+void hv_map_nvme_el2(u64 base);
 struct virtio_conf;
 void hv_map_virtio(u64 base, struct virtio_conf *conf);
 void virtio_put_buffer(u64 base, int qu, u32 id, u32 len);

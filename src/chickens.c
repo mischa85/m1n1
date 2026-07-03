@@ -109,6 +109,14 @@ const struct midr_part_features features_m3 = {
 };
 
 // XXX figure out what features are actually available on M4
+// NOTE (T6041 NVMe experiment, negative result): enabling .mmu_sprr = true here
+// hangs m1n1 during its own early init on M4 (SPRR/GXF enable path faults or
+// the subsequent gxf_init/_gxf_init does) -- m1n1 never re-establishes the
+// proxy after chainload. This corroborates SAC's report that M4 has "plumbing
+// that locks us out of gxf": m1n1 cannot natively enter guarded mode (GL2) on
+// M4, so a native GL2 trampoline for the secure NVMe BAR is not viable. The
+// working path (per SAC, who writes the admin-queue regs "from el2") is fabric/
+// DAPF authorization set up at boot, not a guarded-state store.
 const struct midr_part_features features_m4 = {
     .sleep_mode = SLEEP_NONE, // XXX probably new mode required
     .fast_ipi = true,

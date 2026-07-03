@@ -629,6 +629,7 @@ class M1N1Proxy(Reloadable):
 
     P_TUNABLES_APPLY_GLOBAL = 0xa00
     P_TUNABLES_APPLY_LOCAL = 0xa01
+    P_TUNABLES_APPLY_LOCAL_ADDR = 0xa02
 
     P_DART_INIT = 0xb00
     P_DART_SHUTDOWN = 0xb01
@@ -653,6 +654,7 @@ class M1N1Proxy(Reloadable):
     P_HV_EXIT_CPU = 0xc0f
     P_HV_ADD_TIME = 0xc10
     P_HV_MAP_DOCKCHANNEL_VUART = 0xc11
+    P_HV_MAP_NVME_EL2 = 0xc12
 
     P_FB_INIT = 0xd00
     P_FB_SHUTDOWN = 0xd01
@@ -1089,7 +1091,7 @@ class M1N1Proxy(Reloadable):
     def tunables_apply_local(self, path, prop, reg_offset):
         return self.request(self.P_TUNABLES_APPLY_LOCAL, path, prop, reg_offset)
     def tunables_apply_local_addr(self, path, prop, base):
-        return self.request(self.P_TUNABLES_APPLY_LOCAL, path, prop, base)
+        return self.request(self.P_TUNABLES_APPLY_LOCAL_ADDR, path, prop, base)
 
     def dart_init(self, base, sid, dart_type=DART.T8020):
         return self.request(self.P_DART_INIT, base, sid, dart_type)
@@ -1116,6 +1118,8 @@ class M1N1Proxy(Reloadable):
         return self.request(self.P_HV_MAP_VUART, base, irq, iodev)
     def hv_map_dockchannel_vuart(self, base):
         return self.request(self.P_HV_MAP_DOCKCHANNEL_VUART, base)
+    def hv_map_nvme_el2(self, base):
+        return self.request(self.P_HV_MAP_NVME_EL2, base)
     def hv_trace_irq(self, evt_type, num, count, flags):
         return self.request(self.P_HV_TRACE_IRQ, evt_type, num, count, flags)
     def hv_wdt_start(self, cpu):

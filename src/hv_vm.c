@@ -387,6 +387,73 @@ int hv_map_hook(u64 from, hv_hook_t *hook, u64 size)
     return hv_map(from, ((u64)hook) | FIELD_PREP(SPTE_TYPE, SPTE_HOOK), size, 0);
 }
 
+/*
+ * NVMe EL2 forwarding hook (M4 / ANS3).
+ *
+ * On M4 the NVMe admin-queue registers (AQA 0x24, ASQ 0x28, ACQ 0x30) are
+ * EL2-write-gated: a guest write from EL1 faults at the fabric (L2C access
+ * fault), but the same access issued from EL2 is permitted. macOS programs
+ * them from the SPTM guarded layer; on Asahi the m1n1 hypervisor stands in by
+ * trapping those guest accesses and re-issuing them here, at EL2. width is
+ * log2(bytes).
+ */
+/* Trap-and-forward the NVMe secure-BAR admin-queue window to EL2. On M4 the
+ * admin-queue regs (0x24 AQA, 0x28/0x2c ASQ, 0x30/0x34 ACQ) live in the
+ * CoastGuard/SART secure-BAR window and reject plain EL1/EL2 stores with an L2C
+ * access fault; the rest of the BAR (CC 0x14, linear_sq 0x2813c, NVMMU TCBs,
+ * doorbells) works from EL1. GXF/GL2 is locked on M4 so a guarded store is not
+ * available. ALIAS TEST: the ADT ans node exposes reg[9] = 0x44dcc0000, an alias
+ * of the nvme BAR (reg[3] 0x40dcc0000) at +0x4000000. Hypothesis: this alias is a
+ * differently-gated aperture over the same registers. So for the admin-queue
+ * window only, re-issue the store to the alias and see whether it lands (NVMe
+ * admin queue comes up) or faults the same way. */
+#define NVME_BAR_ALIAS_OFF 0x40000000UL /* reg[9] 0x44dcc0000 - reg[3] 0x40dcc0000 */
+
+static bool hv_nvme_el2_fwd(struct exc_info *ctx, u64 addr, u64 *val, bool write, int width)
+{
+    UNUSED(ctx);
+    if (write) {
+        u64 off = addr & 0xffff;
+        u64 taddr = addr;
+        /* Secure regs that reject plain EL2 stores: admin-queue window
+         * (AQA/ASQ/ACQ 0x24..0x37) and the ANS3 command-permission reg 0x13c8
+         * (macOS SetupCommandPermissions). Re-issue via the reg[9] BAR alias. */
+        if ((off >= 0x24 && off <= 0x37) || (off >= 0x13c8 && off <= 0x13cb)) {
+            taddr = addr + NVME_BAR_ALIAS_OFF;
+            printf("HV NVMe: secure reg %lx -> alias %lx <- %lx (w%d)\n",
+                   addr, taddr, *val, width);
+        }
+        switch (width) {
+            case 0: write8(taddr, *val); break;
+            case 1: write16(taddr, *val); break;
+            case 2: write32(taddr, *val); break;
+            case 3: write64(taddr, *val); break;
+            default: return false;
+        }
+    } else {
+        switch (width) {
+            case 0: *val = read8(addr); break;
+            case 1: *val = read16(addr); break;
+            case 2: *val = read32(addr); break;
+            case 3: *val = read64(addr); break;
+            default: return false;
+        }
+    }
+    return true;
+}
+
+void hv_map_nvme_el2(u64 base)
+{
+    /* Hook the first BAR page (admin queue + CC/CSTS/CAP). The per-command
+     * doorbells and linear-SQ control live in later pages and work from EL1,
+     * so leave those as fast passthrough. */
+    hv_map_hook(base, hv_nvme_el2_fwd, 0x4000);
+    /* The BAR alias aperture (ans reg[9], base + 0x4000000) is already covered by
+     * m1n1's default /arm-io device MMIO mapping, so no extra mapping is needed. */
+    printf("HV NVMe: hook @ %lx, admin-queue writes -> alias @ %lx\n",
+           base, base + NVME_BAR_ALIAS_OFF);
+}
+
 u64 hv_translate(u64 addr, bool s1, bool w, u64 *par_out)
 {
     if (!(mrs(SCTLR_EL12) & SCTLR_M))

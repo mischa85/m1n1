@@ -1452,6 +1452,7 @@ class HV(Reloadable):
 
         self.map_vuart()
         self.map_dockchannel_vuart()
+        self.map_nvme_el2()
 
         # ACTLR depends on the CPU part
         part = MIDR(self.u.mrs(MIDR_EL1)).PART
@@ -1483,6 +1484,20 @@ class HV(Reloadable):
             return
         self.p.hv_map_dockchannel_vuart(base)
         self.add_tracer(irange(base + 0x4000, 0x1000), "DOCKVUART", TraceMode.RESERVED)
+
+    def map_nvme_el2(self):
+        # M4/ANS3: the NVMe admin-queue regs (AQA/ASQ/ACQ at 0x24/0x28/0x30)
+        # are EL2-write-gated -- an EL1 guest write faults at the fabric. Hook
+        # the first BAR page so those writes are trapped and re-issued at EL2
+        # (where they are permitted). reg[3] of /arm-io/ans = the NVMe
+        # controller BAR (per m1n1 nvme.c). Skip gracefully if absent.
+        try:
+            node = self.adt["/arm-io/ans"]
+            base = node.get_reg(3)[0]
+        except (KeyError, AttributeError, IndexError):
+            return
+        self.p.hv_map_nvme_el2(base)
+        self.add_tracer(irange(base, 0x4000), "NVME_EL2", TraceMode.RESERVED)
 
     def map_essential(self):
         # Things we always map/take over, for the hypervisor to work
