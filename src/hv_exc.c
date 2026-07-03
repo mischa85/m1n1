@@ -451,6 +451,21 @@ void hv_exc_sync(struct exc_info *ctx)
                     break;
             }
             break;
+        case ESR_EC_WFI:
+            /*
+             * M4 erratum: WFI/WFIT deep-sleeps and loses CPU register state,
+             * crashing the guest. With HCR_EL2.TWI set we trap and skip the
+             * instruction (treat as a nop / busy-wait) so the guest never
+             * performs the state-losing WFI. Handled in this fast path: the
+             * `handled` block below advances ELR past it and returns.
+             *
+             * Note: WFE shares this EC (ESR_EC_WFI=0x01) but is NOT trapped
+             * (HCR_EL2.TWE is left clear) -- WFE does not lose state on M4
+             * (measured), so it must keep its normal blocking behaviour.
+             */
+            hv_wdt_breadcrumb('w');
+            handled = true;
+            break;
     }
 
     if (handled) {

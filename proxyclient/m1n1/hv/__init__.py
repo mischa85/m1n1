@@ -1406,6 +1406,13 @@ class HV(Reloadable):
         hcr.FMO = 1
         hcr.IMO = 0
         hcr.TTLBOS = 1
+        # M4 erratum: guest WFI/WFIT deep-sleeps and loses CPU register state,
+        # crashing the guest. Trap it to EL2 (handled in firmware hv_exc.c by
+        # skipping it) so the guest never performs the state-losing WFI.
+        # Propagates to secondaries via hv_secondary_info.hcr. (WFE does NOT
+        # lose state on M4 -- measured on all T6041 secondaries, see
+        # experiments/wfe_secondaries.py -- so it is intentionally not trapped.)
+        hcr.TWI = 1
         self.u.msr(HCR_EL2, hcr.value)
 
         # Trap dangerous things
