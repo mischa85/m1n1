@@ -46,8 +46,11 @@ u = ProxyUtils(p, heap_size = 128 * 1024 * 1024)
 # Setup counter redirect / AHCR_EL2 as expected by macOS for macho payloads
 if not args.raw:
     chip_id = u.adt["/chosen"].chip_id
-    # M4 (T8132/T6040/T6041) added speculatively, mirroring M3 handling; unverified.
-    if chip_id in (0x6030, 0x6031, 0x6032, 0x6034, 0x8122, 0x8132, 0x6040, 0x6041):
+    # NB: on M4 (T6040/T6041) this AGTCNTRDIR_EL1 write TRAPS, unlike M3.
+    # Verified on T6041 / macOS 26.6b2: it raises an unknown-reason sync
+    # exception (ESR EC=0) at EL2 on the proxy core. macOS-timer setup for M4
+    # needs a different (likely HV-side) approach, so do NOT write it here.
+    if chip_id in (0x6030, 0x6031, 0x6032, 0x6034, 0x8122):
         u.msr(AGTCNTRDIR_EL1, 3)
         u.msr(AGTCNTRDIR_EL12, 3)
 
