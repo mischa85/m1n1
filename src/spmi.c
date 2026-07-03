@@ -137,7 +137,13 @@ static int raw_command(spmi_dev_t *dev, u8 addr, u8 opc, u16 extra, const u8 *da
 
     if (FIELD_GET(SPMI_REPLY_FRAME_PARITY, reply) != MASK(len_out))
         return -SPMI_ERR_BUS_IO;
-    if (!len_in && !(reply & SPMI_REPLY_ACK))
+    /*
+     * Successful WRITES are ACKed; successful READS come back with ACK=0
+     * (hardware-verified on T6041 ACE3, and matches proxyclient
+     * m1n1/hw/spmi.py). Reads are validated by FRAME_PARITY above, so only
+     * require ACK for pure writes.
+     */
+    if (!len_in && !len_out && !(reply & SPMI_REPLY_ACK))
         return -SPMI_ERR_BUS_IO;
     return 0;
 }
@@ -169,6 +175,24 @@ int spmi_reg0_write(spmi_dev_t *dev, u8 addr, u8 value)
         return -SPMI_ERR_INVALID_PARAM;
     }
     return raw_command(dev, addr, SPMI_OPC_ZERO_WRITE | value, value << 8, NULL, 0, NULL, 0);
+}
+
+int spmi_reg_read(spmi_dev_t *dev, u8 addr, u8 reg, u8 *value)
+{
+    if (reg != (reg & MASK(5))) {
+        printf("spmi: Invalid basic register %u\n", reg);
+        return -SPMI_ERR_INVALID_PARAM;
+    }
+    return raw_command(dev, addr, SPMI_OPC_READ | reg, reg, NULL, 0, value, 1);
+}
+
+int spmi_reg_write(spmi_dev_t *dev, u8 addr, u8 reg, u8 value)
+{
+    if (reg != (reg & MASK(5))) {
+        printf("spmi: Invalid basic register %u\n", reg);
+        return -SPMI_ERR_INVALID_PARAM;
+    }
+    return raw_command(dev, addr, SPMI_OPC_WRITE | reg, reg | (value << 8), NULL, 0, NULL, 0);
 }
 
 int spmi_ext_read(spmi_dev_t *dev, u8 addr, u8 reg, u8 *bfr, size_t len)

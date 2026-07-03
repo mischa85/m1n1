@@ -17,6 +17,9 @@ void spmi_shutdown(spmi_dev_t *dev);
 
 int spmi_reg0_write(spmi_dev_t *dev, u8 addr, u8 value);
 
+int spmi_reg_read(spmi_dev_t *dev, u8 addr, u8 reg, u8 *value);
+int spmi_reg_write(spmi_dev_t *dev, u8 addr, u8 reg, u8 value);
+
 int spmi_ext_read(spmi_dev_t *dev, u8 addr, u8 reg, u8 *bfr, size_t len);
 int spmi_ext_write(spmi_dev_t *dev, u8 addr, u8 reg, const u8 *bfr, size_t len);
 
