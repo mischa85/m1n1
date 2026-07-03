@@ -480,6 +480,34 @@ REGION_RWX_EL0 = 0x80000000000
 REGION_RW_EL0 = 0xa0000000000
 REGION_RX_EL1 = 0xc0000000000
 
+SleepMode = "SleepMode" / Enum(Int32ul,
+    SLEEP_NONE = 0,
+    SLEEP_LEGACY = 1,
+    SLEEP_GLOBAL = 2,
+)
+
+UncoreVersion = "UncoreVersion" / Enum(Int32ul,
+    UNCORE_NONE = 0,
+    UNCORE_V1 = 1,
+    UNCORE_V2 = 2,
+)
+
+CPUFeatures = Struct(
+    "sleep_mode" / SleepMode,
+    "uncore_version" / UncoreVersion,
+    "disable_dc_mva" / Int8ul,
+    "acc_cfg" / Int8ul,
+    "apple_sysregs_unlocked" / Int8ul,
+    "workaround_cyclone_cache" / Int8ul,
+    "nex_powergating" / Int8ul,
+    "fast_ipi" / Int8ul,
+    "mmu_sprr" / Int8ul,
+    "siq_cfg" / Int8ul,
+    "amx" / Int8ul,
+    "actlr_el2" / Int8ul,
+    "counter_redirect" / Int8ul,
+)
+
 # Uses UartInterface.proxyreq() to send requests to M1N1 and process
 # responses sent back.
 class M1N1Proxy(Reloadable):
@@ -506,6 +534,7 @@ class M1N1Proxy(Reloadable):
     P_SLEEP = 0x011
     P_EL3_CALL = 0x012
     P_GET_CHIPID = 0x013
+    P_GET_CPU_FEATURES = 0x014
 
     P_WRITE64 = 0x100
     P_WRITE32 = 0x101
@@ -740,6 +769,9 @@ class M1N1Proxy(Reloadable):
         return (ba_addr, rev)
     def get_base(self):
         return self.request(self.P_GET_BASE)
+    def get_cpu_features(self):
+        addr = self.request(self.P_GET_CPU_FEATURES)
+        return self.iface.readstruct(addr, CPUFeatures)
     def set_baud(self, baudrate):
         self.iface.tty_enable = False
         def change():
