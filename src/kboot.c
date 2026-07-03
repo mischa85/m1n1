@@ -2866,8 +2866,31 @@ int kboot_boot(void *kernel)
     clk_init();
 
     usb_init();
-    pcie_init();
-    dapf_init_all();
+    /*
+     * T6041 (M4 Max): pcie_init() hangs under the m1n1 HV (silently, after the
+     * PMGR power-enable, never returns) — likely PCIe link-up/device wait that
+     * doesn't complete in the virtualized M4 environment. PCIe (NVMe/TB) is not
+     * needed for a headless serial-console bring-up, so skip it on T6041.
+     */
+    if (chip_id == T6041)
+        printf("pcie: skipping pcie_init() on T6041 (hangs under HV; not needed for headless boot)\n");
+    else
+        pcie_init();
+    /*
+     * T6041 (M4 Max) and the wider M4 family gate the DART aperture filter
+     * (DAPF) registers behind the new dart-clock-protection/gapf mechanism
+     * (ADT /chosen dart-clock-protection=1). Programming dapf-instance-0 for a
+     * protected DART (observed: the 0x26e DART, write to its filter reg
+     * 0x500578190) takes an L2C ACCESS_FAULT async SError, which is the
+     * "random" crash seen when booting Linux under the m1n1 HV on M4. DAPF is
+     * a security hardening filter, not required to boot, so skip it on M4
+     * until the clock-gapf ungang sequence is implemented. (T6040/T8132 very
+     * likely need the same gate.)
+     */
+    if (chip_id == T6041)
+        printf("dapf: skipping dapf_init_all() on T6041 (M4 clock-gapf protected)\n");
+    else
+        dapf_init_all();
 
     printf("Setting SMP mode to WFE...\n");
     smp_set_wfe_mode(true);
